@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fund details</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1418;
+    --panel: rgb(35, 49, 57);
+    --panel-2: rgb(28, 40, 47);
+    --panel-hover: rgb(43, 60, 70);
+    --border: rgb(54, 72, 82);
+    --text: #e8eef2;
+    --muted: #8fa0ad;
+    --accent: #4ab3ff;
+    --green: #00e676;
+    --red: #ff6b35;
+    --amber: #ffb547;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .muted { color: var(--muted); }
+
+  .back { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .back:hover { text-decoration: underline; }
+
+  .header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    flex-wrap: wrap; gap: 16px; margin: 12px 0 22px;
+    padding-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  .header h1 { margin: 6px 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+  .header .sub { color: var(--muted); font-size: 13px; }
+  .nav-box { text-align: right; }
+  .nav-box .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .nav-box .price { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+  .nav-box .meta { color: var(--muted); font-size: 12px; }
+
+  .grid { display: grid; gap: 16px; margin-bottom: 22px; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: 2fr 1fr; }
+  @media (max-width: 900px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+  .panel.metric { text-align: center; padding: 18px 12px; }
+  .panel.metric .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .panel.metric .val { font-size: 22px; font-weight: 600; margin-top: 6px; letter-spacing: -0.01em; }
+
+  .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+  .kv .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .kv .val { font-size: 14px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  .returns-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .returns-row .r { text-align: center; padding: 14px 8px; background: var(--panel-2); border-radius: 8px; }
+  .returns-row .r .l { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .returns-row .r .v { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .chart-container { position: relative; height: 380px; }
+  .window-toggle { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .window-toggle button {
+    padding: 5px 10px; background: transparent; color: var(--muted);
+    border: none; font-size: 11.5px; font-weight: 500; cursor: pointer; min-width: 36px;
+  }
+  .window-toggle button.active { background: var(--accent); color: #0d1418; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { background: var(--panel-2); color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.06em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover { background: var(--panel-hover); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); margin: 2px 4px 2px 0; }
+  .err { color: var(--red); padding: 16px; background: rgba(255,107,53,0.08); border-radius: 6px; }
+  .objective { font-size: 13.5px; line-height: 1.65; color: var(--text); }
+</style>
+</head>
+<body>
+  <a href="index.html" class="back">← Back to dashboard</a>
+  <div id="content"><div class="muted" style="padding:40px;text-align:center;">Loading…</div></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const ISIN = params.get('isin');
+const fmtINR = n => isFinite(n) ? '₹' + Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : '—';
+const fmtNum = (n, d = 4) => isFinite(n) ? n.toLocaleString('en-IN', { maximumFractionDigits: d, minimumFractionDigits: d }) : '—';
+const fmtPct = n => isFinite(n) ? (n >= 0 ? '+' : '') + n.toFixed(2) + '%' : '—';
+const fmtCr = n => isFinite(n) ? '₹' + n.toLocaleString('en-IN') + ' Cr' : '—';
+
+const WINDOW_DAYS = { '1M': 30, '3M': 91, '6M': 182, '1Y': 365, '3Y': 1095, '5Y': 1825, 'All': null };
+let currentWindow = 'All';
+let chart = null;
+let fundData = null;
+let navData = null;
+
+async function load() {
+  if (!ISIN) { showError('Missing ?isin= parameter.'); return; }
+  const [fund, nav] = await Promise.all([
+    fetch(`funds/${ISIN}.json`).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(`nav/${ISIN}.json`).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  fundData = fund; navData = nav;
+  if (!fund && !nav) { showError(`No data for ISIN ${ISIN}. Run fetch_funds.py and ensure NAV history is in nav/.`); return; }
+  render();
+}
+
+function showError(msg) {
+  document.getElementById('content').innerHTML = `<div class="err">${msg}</div>`;
+}
+
+function render() {
+  const f = fundData || {};
+  const n = navData || {};
+  const name = f.name || n.name || ISIN;
+  const subParts = [f.fund_name, f.fund_category, f.plan, f.direct === 'Y' ? 'Direct' : null, ISIN].filter(Boolean);
+  const navPrice = (f.nav && f.nav.nav) || n.nav;
+  const navDate = (f.nav && f.nav.date) || n.date;
+
+  document.getElementById('content').innerHTML = `
+    <div class="header">
+      <div>
+        <h1>${name}</h1>
+        <div class="sub">${subParts.join(' · ')}</div>
+      </div>
+      <div class="nav-box">
+        <div class="label">Latest NAV</div>
+        <div class="price">₹${fmtNum(navPrice || 0, 4)}</div>
+        <div class="meta">as of ${navDate || '—'}</div>
+      </div>
+    </div>
+
+    ${renderMetrics(f)}
+
+    <div class="grid grid-2">
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+          <h3 style="margin:0;">Historical NAV</h3>
+          <div class="window-toggle" id="window-toggle">
+            ${Object.keys(WINDOW_DAYS).map(w => `<button data-win="${w}" class="${w === 'All' ? 'active' : ''}">${w}</button>`).join('')}
+          </div>
+        </div>
+        <div class="chart-container"><canvas id="nav-chart"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>Trailing returns</h3>
+        ${renderReturns(f)}
+        ${renderRiskBox(f)}
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="panel">
+        <h3>Fund facts</h3>
+        ${renderFacts(f)}
+      </div>
+      <div class="panel">
+        <h3>Fund manager</h3>
+        ${renderManager(f)}
+      </div>
+    </div>
+
+    ${f.investment_objective ? `
+      <div class="panel">
+        <h3>Investment objective</h3>
+        <div class="objective">${f.investment_objective}</div>
+      </div>
+    ` : ''}
+
+    ${renderComparison(f)}
+
+    ${renderSipBox(f)}
+  `;
+
+  if (n && n.historical_nav && n.historical_nav.length) {
+    renderNavChart();
+  }
+  document.querySelectorAll('#window-toggle button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#window-toggle button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      currentWindow = b.dataset.win;
+      renderNavChart();
+    });
+  });
+}
+
+function renderMetrics(f) {
+  if (!f) return '';
+  const items = [
+    f.aum != null ? { label: 'AUM', val: fmtCr(f.aum) } : null,
+    f.expense_ratio ? { label: 'Expense ratio', val: f.expense_ratio + '%' } : null,
+    f.volatility != null ? { label: 'Volatility', val: f.volatility.toFixed(2) + '%' } : null,
+    f.fund_rating ? { label: 'Kuvera rating', val: '★'.repeat(f.fund_rating) + '<span class="muted">' + '☆'.repeat(5 - f.fund_rating) + '</span>' } : null,
+  ].filter(Boolean);
+  if (items.length === 0) return '';
+  return `
+    <div class="grid grid-${Math.min(items.length, 4)}">
+      ${items.map(i => `<div class="panel metric"><div class="label">${i.label}</div><div class="val">${i.val}</div></div>`).join('')}
+    </div>
+  `;
+}
+
+function renderReturns(f) {
+  if (!f.returns) return '<div class="muted">No return data.</div>';
+  const r = f.returns;
+  const items = [
+    ['1Y', r.year_1], ['3Y', r.year_3], ['5Y', r.year_5], ['Since Incept.', r.inception]
+  ];
+  return `
+    <div class="returns-row">
+      ${items.map(([k, v]) => `
+        <div class="r">
+          <div class="l">${k}</div>
+          <div class="v ${(v||0) >= 0 ? 'green' : 'red'}">${fmtPct(v || 0)}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px;">As of ${r.date || '—'}</div>
+  `;
+}
+
+function renderRiskBox(f) {
+  const tags = [];
+  if (f.crisil_rating) tags.push(['Risk', f.crisil_rating]);
+  if (f.fund_type) tags.push(['Type', f.fund_type]);
+  if (f.fund_category) tags.push(['Category', f.fund_category]);
+  if (f.maturity_type) tags.push(['Maturity', f.maturity_type]);
+  if (f.lock_in_period != null) tags.push(['Lock-in', f.lock_in_period ? f.lock_in_period + ' days' : 'None']);
+  if (tags.length === 0) return '';
+  return `
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      <div class="kv">
+        ${tags.map(([k, v]) => `<div><div class="lbl">${k}</div><div class="val">${v}</div></div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderFacts(f) {
+  const facts = [
+    ['ISIN', f.ISIN || ISIN],
+    ['Scheme code', f.code],
+    ['AMC', f.fund_name],
+    ['Plan', f.plan],
+    ['Direct/Regular', f.direct === 'Y' ? 'Direct' : 'Regular'],
+    ['Inception date', f.start_date],
+    ['Lump sum min', f.lump_min ? '₹' + f.lump_min.toLocaleString('en-IN') : null],
+    ['SIP min', f.sip_min ? '₹' + f.sip_min.toLocaleString('en-IN') : null],
+    ['Portfolio turnover', f.portfolio_turnover],
+    ['Switch allowed', f.switch_allowed === 'Y' ? 'Yes' : 'No'],
+    ['STP allowed', f.stp_flag === 'Y' ? 'Yes' : 'No'],
+    ['SWP allowed', f.swp_flag === 'Y' ? 'Yes' : 'No'],
+  ].filter(([_, v]) => v != null && v !== '');
+  if (facts.length === 0) return '<div class="muted">No facts available.</div>';
+  return `
+    <div class="kv">
+      ${facts.map(([k, v]) => `<div><div class="lbl">${k}</div><div class="val">${v}</div></div>`).join('')}
+    </div>
+  `;
+}
+
+function renderManager(f) {
+  if (!f.fund_manager) return '<div class="muted">No manager information.</div>';
+  const names = f.fund_manager.split(';').map(s => s.trim()).filter(Boolean);
+  return `<div>${names.map(n => `<span class="badge">${n}</span>`).join('')}</div>`;
+}
+
+function renderComparison(f) {
+  if (!f.comparison || !f.comparison.length) return '';
+  const rows = f.comparison.slice().sort((a, b) => (b['3y'] || 0) - (a['3y'] || 0));
+  return `
+    <div class="panel" style="margin-top:0;">
+      <h3>Peer comparison</h3>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>Fund</th>
+            <th class="num">1Y</th>
+            <th class="num">3Y</th>
+            <th class="num">5Y</th>
+            <th class="num">Since Incept.</th>
+            <th class="num">Volatility</th>
+            <th class="num">Expense</th>
+            <th class="num">AUM</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr ${r.code === f.code ? 'style="background:rgba(74,179,255,0.06);"' : ''}>
+                <td>${r.short_name || r.name}${r.code === f.code ? ' <span class="badge" style="background:var(--accent);color:#0d1418;border-color:var(--accent);">This fund</span>' : ''}</td>
+                <td class="num ${r['1y'] >= 0 ? 'green' : 'red'}">${fmtPct(r['1y'] || 0)}</td>
+                <td class="num ${r['3y'] >= 0 ? 'green' : 'red'}">${fmtPct(r['3y'] || 0)}</td>
+                <td class="num ${r['5y'] >= 0 ? 'green' : 'red'}">${fmtPct(r['5y'] || 0)}</td>
+                <td class="num ${r.inception >= 0 ? 'green' : 'red'}">${fmtPct(r.inception || 0)}</td>
+                <td class="num">${(r.volatility || 0).toFixed(2)}%</td>
+                <td class="num">${r.expense_ratio}%</td>
+                <td class="num">${fmtCr(r.aum)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderSipBox(f) {
+  if (!f.sips || !f.sips.length) return '';
+  return `
+    <div class="panel">
+      <h3>SIP / Investment details</h3>
+      <div class="kv">
+        <div><div class="lbl">Min lump sum</div><div class="val">${f.lump_min ? '₹' + f.lump_min.toLocaleString('en-IN') : '—'}</div></div>
+        <div><div class="lbl">Min SIP</div><div class="val">${f.sip_min ? '₹' + f.sip_min.toLocaleString('en-IN') : '—'}</div></div>
+        <div><div class="lbl">SIP frequencies</div><div class="val">${f.sips.map(s => s.sip_frequency).join(', ')}</div></div>
+        <div><div class="lbl">Tax holding period</div><div class="val">${f.tax_period ? f.tax_period + ' days' : '—'}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderNavChart() {
+  const ctx = document.getElementById('nav-chart').getContext('2d');
+  if (chart) chart.destroy();
+  const all = (navData.historical_nav || []).map(([d, v]) => ({ x: new Date(d), y: v })).sort((a, b) => a.x - b.x);
+  let series = all;
+  const winDays = WINDOW_DAYS[currentWindow];
+  if (winDays) {
+    const cutoff = new Date(Date.now() - winDays * 86400000);
+    series = all.filter(p => p.x >= cutoff);
+  }
+  // Decide x unit
+  const days = series.length ? (series[series.length - 1].x - series[0].x) / 86400000 : 0;
+  const xUnit = days > 365 * 3 ? 'year' : days > 90 ? 'month' : 'week';
+  // Color based on net change
+  const up = series.length && series[series.length - 1].y >= series[0].y;
+  const colour = up ? '0, 230, 118' : '255, 107, 53';
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'NAV',
+        data: series,
+        borderColor: `rgb(${colour})`,
+        backgroundColor: ctx => {
+          const { chartArea } = ctx.chart;
+          if (!chartArea) return `rgba(${colour}, 0.05)`;
+          const g = ctx.chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          g.addColorStop(0, `rgba(${colour}, 0.35)`);
+          g.addColorStop(1, `rgba(${colour}, 0)`);
+          return g;
+        },
+        fill: true, tension: 0.15, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgb(28, 40, 47)', borderColor: 'rgb(54, 72, 82)', borderWidth: 1,
+          titleColor: '#e8eef2', bodyColor: '#e8eef2',
+          callbacks: { label: c => 'NAV: ₹' + c.parsed.y.toFixed(4) }
+        }
+      },
+      scales: {
+        x: { type: 'time', time: { unit: xUnit, tooltipFormat: 'dd MMM yyyy' }, ticks: { color: '#8fa0ad' }, grid: { color: 'rgba(143,160,173,0.06)' } },
+        y: { ticks: { color: '#8fa0ad', callback: v => '₹' + v.toFixed(2) }, grid: { color: 'rgba(143,160,173,0.08)' } }
+      }
+    }
+  });
+}
+
+load();
+</script>
+</body>
+</html>

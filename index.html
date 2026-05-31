@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PnL Tracker — CAS Holdings</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1418;
+    --panel: rgb(35, 49, 57);
+    --panel-2: rgb(28, 40, 47);
+    --panel-hover: rgb(43, 60, 70);
+    --border: rgb(54, 72, 82);
+    --text: #e8eef2;
+    --muted: #8fa0ad;
+    --accent: #4ab3ff;
+    --green: #00e676;
+    --green-soft: rgba(0, 230, 118, 0.14);
+    --red: #ff6b35;
+    --red-soft: rgba(255, 107, 53, 0.14);
+    --amber: #ffb547;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .subtitle { color: var(--muted); margin-bottom: 18px; font-size: 13px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .card .value { font-size: 19px; font-weight: 600; margin-top: 6px; letter-spacing: -0.01em; }
+  .card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .card-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .card-toggle {
+    display: inline-flex; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 5px; overflow: hidden;
+  }
+  .card-toggle button {
+    padding: 3px 8px; background: transparent; color: var(--muted);
+    border: none; font-size: 10.5px; font-weight: 500; cursor: pointer;
+    text-transform: none; letter-spacing: 0;
+  }
+  .card-toggle button.active { background: var(--accent); color: #0d1418; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .amber { color: var(--amber); }
+
+  .filters {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 18px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px;
+    align-items: end;
+  }
+  .filter label {
+    display: block; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+  }
+  .ms { position: relative; }
+  .ms-btn {
+    width: 100%; height: 34px; padding: 0 26px 0 10px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+    text-align: left; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; position: relative;
+    line-height: 32px;
+  }
+  .ms-btn:hover { border-color: var(--accent); }
+  .ms-btn::after {
+    content: ''; position: absolute; right: 10px; top: 50%;
+    width: 6px; height: 6px; border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted); transform: translateY(-70%) rotate(45deg);
+  }
+  .ms-btn.empty { color: var(--muted); font-weight: 400; }
+  .ms-pop {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    max-height: 320px; overflow: hidden; z-index: 50; padding: 0; display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    flex-direction: column;
+  }
+  .ms.open .ms-pop { display: flex; }
+  .ms-search {
+    width: calc(100% - 16px); margin: 8px; padding: 6px 10px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; font-size: 12px;
+  }
+  .ms-actions {
+    display: flex; gap: 12px; padding: 0 12px 8px; font-size: 11px;
+    color: var(--accent); border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  .ms-actions span { cursor: pointer; }
+  .ms-actions span:hover { text-decoration: underline; }
+  .ms-list { overflow-y: auto; padding: 4px; flex: 1; }
+  .ms-opt {
+    display: flex; align-items: center; padding: 6px 8px;
+    cursor: pointer; border-radius: 4px; font-size: 12.5px;
+  }
+  .ms-opt:hover { background: var(--panel-hover); }
+  .ms-opt input[type="checkbox"] {
+    margin: 0 10px 0 0; cursor: pointer; flex-shrink: 0;
+    width: 14px; height: 14px; accent-color: var(--accent);
+  }
+  .ms-opt .lbl { flex: 1; /*overflow: hidden; text-overflow: ellipsis; white-space: nowrap;*/ }
+  .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  button {
+    padding: 7px 14px; background: var(--accent); color: #0d1418; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 12.5px; font-weight: 600;
+  }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+  button:hover { filter: brightness(1.1); }
+
+  .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 18px; }
+  @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 18px;
+  }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+  .panel-header h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
+  .panel-note { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .toggle-group { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .toggle-group button {
+    padding: 6px 12px; background: transparent; color: var(--muted);
+    border: none; border-radius: 0; font-size: 12px; font-weight: 500;
+  }
+  .toggle-group button.active { background: var(--accent); color: #0d1418; }
+  .chart-container { position: relative; height: 360px; }
+  .chart-container.small { height: 280px; }
+
+  .window-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 8px 10px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .window-label {
+    color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .window-toggle button { padding: 5px 10px; font-size: 11.5px; min-width: 36px; }
+  .granularity-tag {
+    margin-left: auto; color: var(--muted); font-size: 11px;
+    background: var(--bg); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+  }
+
+  .table-wrap { max-height: 540px; overflow: auto; border-radius: 6px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th {
+    background: var(--panel-2); color: var(--muted); font-weight: 500;
+    text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.06em;
+    position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover { background: var(--panel-hover); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  }
+  .badge.purchase { background: var(--green-soft); color: var(--green); border-color: rgba(0, 230, 118, 0.3); }
+  .badge.redemption { background: var(--red-soft); color: var(--red); border-color: rgba(255, 107, 53, 0.3); }
+  .badge.switch { background: rgba(255, 181, 71, 0.14); color: var(--amber); border-color: rgba(255, 181, 71, 0.3); }
+
+  .empty { color: var(--muted); text-align: center; }
+  .loading { color: var(--muted); padding: 40px; text-align: center; }
+  .err { color: var(--red); padding: 16px; background: var(--red-soft); border-radius: 6px; }
+
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .insight {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .insight .title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+  .insight-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-bottom: 10px;
+  }
+  .insight-head .title { margin-bottom: 0; }
+  .ins-toggle {
+    display: inline-flex; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 5px; overflow: hidden;
+  }
+  .ins-toggle button {
+    padding: 3px 8px; background: transparent; color: var(--muted);
+    border: none; font-size: 10.5px; font-weight: 500; cursor: pointer;
+    text-transform: none; letter-spacing: 0; min-width: 0;
+  }
+  .ins-toggle button.active { background: var(--accent); color: #0d1418; }
+  .pie-wrap {
+    position: relative; height: 200px; display: flex; align-items: center; justify-content: center;
+  }
+  .insight .row {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 0; font-size: 13px;
+    border-bottom: 1px dashed rgba(143, 160, 173, 0.12);
+  }
+  .insight .row:last-child { border-bottom: none; }
+  .insight .row .name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .insight .row .v { font-variant-numeric: tabular-nums; flex-shrink: 0; font-weight: 500; }
+
+  .tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab {
+    padding: 9px 16px; cursor: pointer; color: var(--muted);
+    border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .fund-link {
+    color: var(--text); cursor: pointer; border-bottom: 1px dashed transparent;
+  }
+  .fund-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .side-panel-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 100; display: none;
+  }
+  .side-panel-backdrop.open { display: block; }
+  .side-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 90vw;
+    background: var(--panel); border-left: 1px solid var(--border);
+    z-index: 101; transform: translateX(100%); transition: transform 0.2s ease-out;
+    overflow-y: auto; padding: 20px 22px; box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+  }
+  .side-panel.open { transform: translateX(0); }
+  .side-panel-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 14px;
+  }
+  .side-panel-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .side-panel-head .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .side-panel .close-x {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    width: 28px; height: 28px; padding: 0; border-radius: 6px; cursor: pointer;
+    line-height: 1; font-size: 14px;
+  }
+  .side-panel .close-x:hover { color: var(--text); border-color: var(--accent); }
+  .sp-section {
+    margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px dashed rgba(143,160,173,0.18);
+  }
+  .sp-section:last-child { border-bottom: none; }
+  .sp-section h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+  .sp-grid .lbl { color: var(--muted); font-size: 11px; }
+  .sp-grid .val { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .sp-returns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+  .sp-returns .r { padding: 8px 4px; background: var(--panel-2); border-radius: 6px; }
+  .sp-returns .r .l { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+  .sp-returns .r .v { font-size: 13px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .sp-text { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+  .sp-cta {
+    display: inline-block; margin-top: 10px; padding: 8px 14px;
+    background: var(--accent); color: #0d1418; text-decoration: none;
+    border-radius: 6px; font-size: 12.5px; font-weight: 600;
+  }
+  .sp-cta:hover { filter: brightness(1.1); }
+  .sp-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 11px; margin: 2px 4px 2px 0;
+  }
+</style>
+</head>
+<body>
+  <div class="side-panel-backdrop" id="side-backdrop"></div>
+  <aside class="side-panel" id="side-panel">
+    <div class="side-panel-head">
+      <div>
+        <h2 id="sp-title">Fund details</h2>
+        <div class="meta" id="sp-meta"></div>
+      </div>
+      <button class="close-x" id="sp-close" aria-label="Close">×</button>
+    </div>
+    <div id="sp-body"></div>
+  </aside>
+
+  <h1>PnL Tracker — CAS Holdings</h1>
+  <div class="subtitle">FIFO cost basis · live current value from NAV history</div>
+
+  <div id="status" class="loading">Loading transactions and NAV history…</div>
+
+  <div id="app" style="display: none;">
+    <div class="cards" id="cards"></div>
+
+    <div class="filters">
+      <div class="filter"><label>AMC</label><div class="ms" id="f-amc"></div></div>
+      <div class="filter"><label>Fund</label><div class="ms" id="f-fund"></div></div>
+      <div class="filter"><label>Folio</label><div class="ms" id="f-folio"></div></div>
+      <div class="filter"><label>Advisor</label><div class="ms" id="f-advisor"></div></div>
+      <div class="filter-actions">
+        <button id="reset">Reset filters</button>
+        <span id="match-info" style="color: var(--muted); font-size: 12px;"></span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Profit / Loss over time</h3>
+          <div class="toggle-group" id="pl-metric-toggle">
+            <button data-metric="pl" class="active">P/L (₹)</button>
+            <button data-metric="both">Invested vs Value</button>
+            <button data-metric="pct">Return %</button>
+          </div>
+        </div>
+        <div class="window-bar">
+          <span class="window-label">Time window</span>
+          <div class="toggle-group window-toggle">
+            <button data-win="1M">1M</button>
+            <button data-win="3M">3M</button>
+            <button data-win="6M">6M</button>
+            <button data-win="1Y">1Y</button>
+            <button data-win="2Y">2Y</button>
+            <button data-win="5Y">5Y</button>
+            <button data-win="All" class="active">All</button>
+          </div>
+          <span class="granularity-tag" id="granularity-tag"></span>
+        </div>
+        <div class="chart-container"><canvas id="pl-chart"></canvas></div>
+        <div class="panel-note">Holdings re-computed FIFO at each sampling date; value = remaining units × NAV. Granularity auto-switches: daily ≤ 2 years, weekly above.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h3>Allocation by AMC</h3></div>
+        <div class="chart-container small"><canvas id="alloc-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h3>Cash flow & cumulative invested</h3>
+        <div class="toggle-group" id="metric-toggle">
+          <button data-metric="invested" class="active">Cumulative invested</button>
+          <button data-metric="flow">Monthly cash flow</button>
+        </div>
+      </div>
+      <div class="chart-container"><canvas id="chart"></canvas></div>
+      <div class="panel-note">Uses the same time window selected above.</div>
+    </div>
+
+    <div class="panel">
+      <div class="tab-bar">
+        <div class="tab active" data-tab="insights">Insights</div>
+        <div class="tab" data-tab="funds">Fund summary</div>
+        <div class="tab" data-tab="holdings">Current holdings</div>
+        <div class="tab" data-tab="txns">Transactions</div>
+      </div>
+      <div class="tab-panel active" id="tab-insights">
+        <div class="insights-grid" id="insights"></div>
+      </div>
+      <div class="tab-panel" id="tab-funds">
+        <div class="table-wrap">
+          <table id="funds-table">
+            <thead><tr>
+              <th data-sort="amc">AMC</th>
+              <th data-sort="fund_name">Fund</th>
+              <th class="num" data-sort="folios">Folios</th>
+              <th class="num" data-sort="current_units">Units</th>
+              <th class="num" data-sort="nav">NAV</th>
+              <th data-sort="nav_date">NAV date</th>
+              <th class="num" data-sort="current_invested">Invested (₹)</th>
+              <th class="num" data-sort="current_value">Value (₹)</th>
+              <th class="num" data-sort="pl">P/L (₹)</th>
+              <th class="num" data-sort="pl_pct">P/L %</th>
+              <th class="num" data-sort="xirr">XIRR</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-holdings">
+        <div class="table-wrap">
+          <table id="holdings-table">
+            <thead><tr>
+              <th data-sort="amc">AMC</th>
+              <th data-sort="fund_name">Fund</th>
+              <th data-sort="folio">Folio</th>
+              <th class="num" data-sort="current_units">Units</th>
+              <th class="num" data-sort="nav">NAV</th>
+              <th data-sort="nav_date">NAV date</th>
+              <th class="num" data-sort="current_invested">Invested (₹)</th>
+              <th class="num" data-sort="current_value">Value (₹)</th>
+              <th class="num" data-sort="pl">P/L (₹)</th>
+              <th class="num" data-sort="pl_pct">P/L %</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-txns">
+        <div class="table-wrap">
+          <table id="tx-table">
+            <thead><tr>
+              <th>Date</th><th>AMC</th><th>Fund</th><th>Folio</th><th>Type</th>
+              <th class="num">Amount (₹)</th><th class="num">Units</th><th class="num">NAV</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let TXNS = [];
+let NAVS = {};           // isin → { nav, date, name, historical_nav: [[date, nav]] }
+let NAV_INDEX = {};      // isin → sorted Date[] for binary search
+let FUNDS = {};          // isin → kuvera fund details (optional)
+let FUND_NAME_OVERRIDES = {}; // isin → preferred display name from FUNDS
+let AMC_OVERRIDES = {};  // isin → AMC display name from FUNDS
+let chart = null, plChart = null, allocChart = null;
+let currentMetric = 'invested';
+let currentPLMetric = 'pl';
+let currentWindow = 'All';
+let currentReturnView = 'all'; // 'all' | '1D' | '1M'
+let holdingsSort = { col: 'current_value', dir: -1 };
+let fundsSort = { col: 'current_value', dir: -1 };
+
+const WINDOW_DAYS = { '1M': 30, '3M': 91, '6M': 182, '1Y': 365, '2Y': 730, '5Y': 1825, 'All': null };
+
+// Returns {start, end, granularity} given filtered txns and the selected window.
+// Granularity: 'day' if window <= 2 years, else 'week'.
+function getWindowRange(filteredTxns) {
+  const end = new Date();
+  let start;
+  if (currentWindow === 'All' || WINDOW_DAYS[currentWindow] == null) {
+    start = filteredTxns.length ? new Date(filteredTxns[0].date) : new Date(end);
+  } else {
+    start = new Date(end);
+    start.setDate(start.getDate() - WINDOW_DAYS[currentWindow]);
+  }
+  const spanDays = (end - start) / 86400000;
+  const granularity = spanDays > 730 ? 'week' : 'day';
+  return { start, end, granularity, spanDays };
+}
+
+function generateSamplingDates(start, end, granularity) {
+  const dates = [];
+  const stepDays = granularity === 'week' ? 7 : 1;
+  const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while (d <= end) {
+    dates.push(new Date(d));
+    d.setDate(d.getDate() + stepDays);
+  }
+  if (dates.length === 0 || dates[dates.length - 1].getTime() < end.getTime()) {
+    dates.push(new Date(end));
+  }
+  return dates;
+}
+
+const fmtINR = n => {
+  if (!isFinite(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return sign + '₹' + Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+};
+const fmtINRShort = n => {
+  if (!isFinite(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1e7) return sign + '₹' + (a/1e7).toFixed(2) + ' Cr';
+  if (a >= 1e5) return sign + '₹' + (a/1e5).toFixed(2) + ' L';
+  if (a >= 1e3) return sign + '₹' + (a/1e3).toFixed(1) + 'k';
+  return sign + '₹' + a.toFixed(0);
+};
+const fmtNum = (n, d = 3) => isFinite(n) ? n.toLocaleString('en-IN', { maximumFractionDigits: d, minimumFractionDigits: d }) : '—';
+const fmtPct = n => isFinite(n) ? (n >= 0 ? '+' : '') + n.toFixed(2) + '%' : '—';
+
+function parseDate(s) {
+  const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+  const [d, m, y] = s.split('-');
+  return new Date(parseInt(y), months[m], parseInt(d));
+}
+function parseISO(s) { return new Date(s); }
+
+async function load() {
+  try {
+    const res = await fetch('transactions.csv');
+    if (!res.ok) throw new Error('Cannot fetch transactions.csv (' + res.status + ')');
+    const text = await res.text();
+    const parsed = Papa.parse(text, { header: true, dynamicTyping: false, skipEmptyLines: true });
+    TXNS = parsed.data.map(r => ({
+      ...r,
+      date: parseDate(r.date),
+      amount: parseFloat(r.amount) || 0,
+      units: parseFloat(r.units) || 0,
+      price: parseFloat(r.price) || 0,
+    })).sort((a, b) => a.date - b.date);
+
+    // Load NAVs in parallel
+    const isins = [...new Set(TXNS.map(t => t.isin).filter(Boolean))];
+    document.getElementById('status').textContent = `Loading ${isins.length} NAV files…`;
+    const navResults = await Promise.all(isins.map(async isin => {
+      try {
+        const r = await fetch(`nav/${isin}.json`);
+        if (!r.ok) return [isin, null];
+        return [isin, await r.json()];
+      } catch (e) { return [isin, null]; }
+    }));
+    for (const [isin, nav] of navResults) {
+      if (nav) {
+        NAVS[isin] = nav;
+        // Build a sorted array of {t, v} for binary search
+        const series = (nav.historical_nav || []).map(([d, v]) => ({ t: new Date(d).getTime(), v })).sort((a,b) => a.t - b.t);
+        NAV_INDEX[isin] = series;
+      }
+    }
+
+    // Load optional fund details (kuvera) for richer display names + insights
+    document.getElementById('status').textContent = `Loading fund metadata…`;
+    const fundResults = await Promise.all(isins.map(async isin => {
+      try {
+        const r = await fetch(`funds/${isin}.json`);
+        if (!r.ok) return [isin, null];
+        return [isin, await r.json()];
+      } catch (e) { return [isin, null]; }
+    }));
+    for (const [isin, fund] of fundResults) {
+      if (!fund) continue;
+      FUNDS[isin] = fund;
+      // Compose display name: "<short_name> - <plan title-cased> - <Direct|Regular>"
+      const base = fund.short_name || fund.name;
+      if (base) {
+        const planTitle = fund.plan
+          ? fund.plan.charAt(0).toUpperCase() + fund.plan.slice(1).toLowerCase()
+          : null;
+        const planType = fund.direct === 'Y' ? 'Direct' : (fund.direct === 'N' ? 'Regular' : null);
+        const parts = [base.replace(/\s*-\s*(growth|idcw|regular|direct)\b.*$/i, '').trim(), planTitle, planType].filter(Boolean);
+        FUND_NAME_OVERRIDES[isin] = parts.join(' - ');
+      }
+      if (fund.fund_name) AMC_OVERRIDES[isin] = fund.fund_name;
+    }
+
+    // Apply overrides to TXNS so all downstream code sees clean names
+    for (const t of TXNS) {
+      if (FUND_NAME_OVERRIDES[t.isin]) t.fund_name = FUND_NAME_OVERRIDES[t.isin];
+      if (AMC_OVERRIDES[t.isin]) t.amc = AMC_OVERRIDES[t.isin];
+    }
+
+    init();
+  } catch (e) {
+    document.getElementById('status').innerHTML =
+      '<div class="err">Failed to load data: ' + e.message +
+      '<br><br>Serve the folder with <code>python3 -m http.server</code> from this directory and open the printed URL.</div>';
+  }
+}
+
+// Binary search: NAV at or before date.
+function navAt(isin, date) {
+  const idx = NAV_INDEX[isin];
+  if (!idx || idx.length === 0) return null;
+  const t = date.getTime();
+  if (t < idx[0].t) return idx[0].v;
+  if (t >= idx[idx.length - 1].t) return idx[idx.length - 1].v;
+  let lo = 0, hi = idx.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (idx[mid].t <= t) lo = mid; else hi = mid - 1;
+  }
+  return idx[lo].v;
+}
+
+// FIFO accumulator per (folio, isin)
+function newLots() { return []; }
+function applyTxn(state, txn) {
+  const key = txn.folio + '|' + txn.isin;
+  if (!state[key]) state[key] = { folio: txn.folio, isin: txn.isin, fund_name: txn.fund_name, amc: txn.amc, advisor: txn.advisor, lots: newLots(), purchase_total: 0, redeem_total: 0 };
+  const s = state[key];
+  if (txn.units >= 0) {
+    s.purchase_total += txn.amount;
+    if (txn.units > 0) s.lots.push({ units: txn.units, price: txn.price });
+  } else {
+    s.redeem_total += txn.amount;
+    let remaining = -txn.units;
+    while (remaining > 1e-6 && s.lots.length) {
+      const lot = s.lots[0];
+      if (lot.units <= remaining + 1e-6) {
+        remaining -= lot.units;
+        s.lots.shift();
+      } else {
+        lot.units -= remaining;
+        remaining = 0;
+      }
+    }
+  }
+}
+
+// Compute holdings (FIFO) over filtered txns as of `asOf` (defaults to "now")
+function computeHoldings(filteredTxns, asOf = null) {
+  const state = {};
+  for (const t of filteredTxns) {
+    if (asOf && t.date > asOf) break;
+    applyTxn(state, t);
+  }
+  return state;
+}
+
+function holdingsToRows(state, asOfDate) {
+  const rows = [];
+  for (const key in state) {
+    const s = state[key];
+    const units = s.lots.reduce((a, l) => a + l.units, 0);
+    if (units < 1e-6) continue;
+    const invested = s.lots.reduce((a, l) => a + l.units * l.price, 0);
+    const nav = asOfDate ? navAt(s.isin, asOfDate) : (NAVS[s.isin] && NAVS[s.isin].nav);
+    const nav_date = asOfDate ? asOfDate : (NAVS[s.isin] && NAVS[s.isin].date ? new Date(NAVS[s.isin].date) : null);
+    const value = nav != null ? units * nav : null;
+    const pl = value != null ? value - invested : null;
+    const pl_pct = value != null && invested > 0 ? (pl / invested) * 100 : null;
+    rows.push({
+      folio: s.folio, isin: s.isin, fund_name: s.fund_name, amc: s.amc, advisor: s.advisor,
+      current_units: units, current_invested: invested, nav, nav_date, current_value: value, pl, pl_pct,
+    });
+  }
+  return rows;
+}
+
+function uniqueSorted(key) {
+  return [...new Set(TXNS.map(r => r[key]).filter(Boolean))].sort();
+}
+
+// ---- Multi-select ----
+const MS_STATE = { amc: new Set(), fund_name: new Set(), folio: new Set(), advisor: new Set() };
+const MS_LABELS = { amc: 'AMCs', fund_name: 'Funds', folio: 'Folios', advisor: 'Advisors' };
+const MS_IDS = { amc: 'f-amc', fund_name: 'f-fund', folio: 'f-folio', advisor: 'f-advisor' };
+
+function getFilters() {
+  return {
+    amc: MS_STATE.amc, fund_name: MS_STATE.fund_name,
+    folio: MS_STATE.folio, advisor: MS_STATE.advisor,
+  };
+}
+
+function applyFilters(rows, f) {
+  return rows.filter(r =>
+    (f.amc.size === 0 || f.amc.has(r.amc)) &&
+    (f.fund_name.size === 0 || f.fund_name.has(r.fund_name)) &&
+    (f.folio.size === 0 || f.folio.has(r.folio)) &&
+    (f.advisor.size === 0 || f.advisor.has(r.advisor))
+  );
+}
+
+function setupMS(field) {
+  const root = document.getElementById(MS_IDS[field]);
+  root.innerHTML = `
+    <button class="ms-btn empty" type="button">All ${MS_LABELS[field]}</button>
+    <div class="ms-pop">
+      <input class="ms-search" type="text" placeholder="Search…">
+      <div class="ms-actions"><span data-act="all">Select all</span><span data-act="clear">Clear</span></div>
+      <div class="ms-list"></div>
+    </div>
+  `;
+  const btn = root.querySelector('.ms-btn');
+  const pop = root.querySelector('.ms-pop');
+  const search = root.querySelector('.ms-search');
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.ms.open').forEach(m => { if (m !== root) m.classList.remove('open'); });
+    root.classList.toggle('open');
+    if (root.classList.contains('open')) { search.value = ''; renderMSList(field); search.focus(); }
+  });
+  pop.addEventListener('click', e => e.stopPropagation());
+  search.addEventListener('input', () => renderMSList(field));
+  root.querySelectorAll('.ms-actions span').forEach(s => {
+    s.addEventListener('click', () => {
+      const act = s.dataset.act;
+      const visible = getMSOptions(field);
+      if (act === 'all') visible.forEach(v => MS_STATE[field].add(v));
+      else MS_STATE[field].clear();
+      renderMSList(field);
+      updateMSButton(field);
+      update();
+    });
+  });
+}
+
+function getMSOptions(field) {
+  // Options compatible with OTHER filter selections
+  const others = {};
+  for (const k of Object.keys(MS_STATE)) others[k] = k === field ? new Set() : MS_STATE[k];
+  const rows = applyFilters(TXNS, others);
+  return [...new Set(rows.map(r => r[field]).filter(Boolean))].sort();
+}
+
+function renderMSList(field) {
+  const root = document.getElementById(MS_IDS[field]);
+  const list = root.querySelector('.ms-list');
+  const search = root.querySelector('.ms-search').value.toLowerCase().trim();
+  let opts = getMSOptions(field);
+  if (search) opts = opts.filter(o => o.toLowerCase().includes(search));
+  // Also keep currently-selected items visible at the top even if they aren't compatible
+  const selected = [...MS_STATE[field]].filter(s => !opts.includes(s));
+  const ordered = [...selected, ...opts];
+  list.innerHTML = ordered.map(o => {
+    const id = 'ms-' + field + '-' + btoa(unescape(encodeURIComponent(o))).replace(/[^a-z0-9]/gi, '').slice(0, 16);
+    const checked = MS_STATE[field].has(o) ? 'checked' : '';
+    return `<label class="ms-opt" for="${id}"><input type="checkbox" id="${id}" data-val="${o.replace(/"/g, '&quot;')}" ${checked}><span class="lbl" title="${o}">${o}</span></label>`;
+  }).join('') || '<div style="color:var(--muted);padding:8px;font-size:12px;">No matches</div>';
+  list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const v = cb.dataset.val;
+      if (cb.checked) MS_STATE[field].add(v); else MS_STATE[field].delete(v);
+      updateMSButton(field);
+      update();
+    });
+  });
+}
+
+function updateMSButton(field) {
+  const root = document.getElementById(MS_IDS[field]);
+  const btn = root.querySelector('.ms-btn');
+  const sel = MS_STATE[field];
+  if (sel.size === 0) {
+    btn.textContent = 'All ' + MS_LABELS[field];
+    btn.classList.add('empty');
+  } else if (sel.size === 1) {
+    btn.textContent = [...sel][0];
+    btn.classList.remove('empty');
+  } else {
+    btn.textContent = sel.size + ' selected';
+    btn.classList.remove('empty');
+  }
+}
+
+function refillDependentFilters() {
+  // Drop selections that are no longer valid given the data
+  const allValues = {
+    amc: new Set(TXNS.map(t => t.amc).filter(Boolean)),
+    fund_name: new Set(TXNS.map(t => t.fund_name).filter(Boolean)),
+    folio: new Set(TXNS.map(t => t.folio).filter(Boolean)),
+    advisor: new Set(TXNS.map(t => t.advisor).filter(Boolean)),
+  };
+  for (const k of Object.keys(MS_STATE)) {
+    for (const v of [...MS_STATE[k]]) if (!allValues[k].has(v)) MS_STATE[k].delete(v);
+    updateMSButton(k);
+  }
+}
+
+// Compute the latest snapshot date that ALL held funds have NAV data for, plus
+// dayBefore (calendar day before) and monthBefore (calendar month before). All three
+// dates are then used uniformly for every fund via navAt's "≤ date" lookup so that
+// every fund is priced at the same as-of date.
+function getCommonNavDates(holdings) {
+  const isins = holdings.filter(h => h.current_units > 0 && NAV_INDEX[h.isin] && NAV_INDEX[h.isin].length).map(h => h.isin);
+  if (isins.length === 0) return null;
+  let minLast = Infinity;
+  for (const isin of isins) {
+    const idx = NAV_INDEX[isin];
+    minLast = Math.min(minLast, idx[idx.length - 1].t);
+  }
+  if (!isFinite(minLast)) return null;
+  const today = new Date(minLast);
+  const dayBefore = new Date(today); dayBefore.setDate(dayBefore.getDate() - 1);
+  const monthBefore = new Date(today); monthBefore.setMonth(monthBefore.getMonth() - 1);
+  return { today, dayBefore, monthBefore };
+}
+
+// Portfolio value as of a specific date for all held funds.
+function portfolioValueAt(holdings, date) {
+  let v = 0;
+  for (const h of holdings) {
+    if (h.current_units <= 0) continue;
+    const nav = navAt(h.isin, date);
+    if (nav != null) v += h.current_units * nav;
+  }
+  return v;
+}
+
+function fmtDayMon(d) {
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+function renderCards(filteredTxns) {
+  const holdings = holdingsToRows(computeHoldings(filteredTxns));
+  const invested = filteredTxns.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0);
+  const redeemed = -filteredTxns.filter(r => r.amount < 0).reduce((s, r) => s + r.amount, 0);
+  const current_invested = holdings.reduce((s, h) => s + h.current_invested, 0);
+  const current_value = holdings.reduce((s, h) => s + (h.current_value || 0), 0);
+  const pl = current_value - current_invested;
+  const pl_pct = current_invested > 0 ? (pl / current_invested) * 100 : 0;
+
+  const cards = [
+    { label: 'Total invested', value: fmtINR(invested), sub: 'all-time purchases' },
+    { label: 'Total redeemed', value: fmtINR(redeemed), sub: 'all-time exits', cls: 'red' },
+    { label: 'Current invested', value: fmtINR(current_invested), sub: 'FIFO cost basis of held units' },
+    { label: 'Current value', value: fmtINR(current_value), sub: '@ latest NAV', cls: 'amber' },
+  ];
+
+  // Combined Returns card with toggle: All-time P/L, 1D change, 1M change
+  const dates = getCommonNavDates(holdings);
+  const v0 = dates ? portfolioValueAt(holdings, dates.today) : 0;
+  const v1 = dates ? portfolioValueAt(holdings, dates.dayBefore) : 0;
+  const vM = dates ? portfolioValueAt(holdings, dates.monthBefore) : 0;
+
+  const opts = [
+    {
+      key: 'all', label: 'All-time',
+      val: pl, sub: fmtPct(pl_pct) + ' return',
+    },
+    {
+      key: '1M', label: '1M',
+      val: vM > 0 ? (v0 - vM) : null,
+      sub: vM > 0 && dates
+        ? fmtPct(((v0 - vM) / vM) * 100) + ' · since ' + fmtDayMon(dates.monthBefore)
+        : 'No NAV data',
+    },
+    {
+      key: '1D', label: '1D',
+      val: v1 > 0 ? (v0 - v1) : null,
+      sub: v1 > 0 && dates
+        ? fmtPct(((v0 - v1) / v1) * 100) + ' · ' + fmtDayMon(dates.dayBefore) + ' → ' + fmtDayMon(dates.today)
+        : 'No NAV data',
+    },
+  ];
+  // If currently-selected view has no data, fall back to first available
+  let active = opts.find(o => o.key === currentReturnView && o.val != null) || opts[0];
+
+  const toggle = `<div class="card-toggle" id="returns-toggle">${opts.map(o =>
+    `<button data-view="${o.key}" class="${o.key === active.key ? 'active' : ''}" ${o.val == null ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>${o.label}</button>`
+  ).join('')}</div>`;
+
+  const returnsCard = `
+    <div class="card">
+      <div class="card-head">
+        <div class="label">Returns</div>
+        ${toggle}
+      </div>
+      <div class="value ${active.val == null ? '' : (active.val >= 0 ? 'green' : 'red')}">${active.val != null ? fmtINR(active.val) : '—'}</div>
+      <div class="sub">${active.sub}</div>
+    </div>
+  `;
+
+  document.getElementById('cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls||''}">${c.value}</div><div class="sub">${c.sub||''}</div></div>`
+  ).join('') + returnsCard;
+
+  document.querySelectorAll('#returns-toggle button[data-view]:not([disabled])').forEach(b => {
+    b.addEventListener('click', () => {
+      currentReturnView = b.dataset.view;
+      renderCards(filteredTxns);
+    });
+  });
+}
+
+function buildPLSeries(filteredTxns) {
+  if (filteredTxns.length === 0) return { data: [], granularity: 'day' };
+  const { start, end, granularity } = getWindowRange(filteredTxns);
+  const dates = generateSamplingDates(start, end, granularity);
+
+  // Replay all txns *before* the window start to seed the FIFO state
+  const state = {};
+  let idx = 0;
+  while (idx < filteredTxns.length && filteredTxns[idx].date < dates[0]) {
+    applyTxn(state, filteredTxns[idx]);
+    idx++;
+  }
+  const out = [];
+  for (const d of dates) {
+    while (idx < filteredTxns.length && filteredTxns[idx].date <= d) {
+      applyTxn(state, filteredTxns[idx]);
+      idx++;
+    }
+    let invested = 0, value = 0;
+    for (const k in state) {
+      const s = state[k];
+      const units = s.lots.reduce((a, l) => a + l.units, 0);
+      if (units < 1e-6) continue;
+      const cost = s.lots.reduce((a, l) => a + l.units * l.price, 0);
+      const nav = navAt(s.isin, d);
+      invested += cost;
+      if (nav != null) value += units * nav;
+    }
+    out.push({ x: d, invested, value, pl: value - invested, pct: invested > 0 ? ((value - invested) / invested) * 100 : 0 });
+  }
+  return { data: out, granularity };
+}
+
+function buildSeries(filteredTxns, metric) {
+  if (filteredTxns.length === 0) return { data: [], unit: 'day' };
+  const { start, end, granularity } = getWindowRange(filteredTxns);
+  if (metric === 'invested') {
+    // Cumulative purchase amount carried forward; sample at granularity within window
+    const dates = generateSamplingDates(start, end, granularity);
+    // Seed cumulative with everything before window start
+    let cum = 0, idx = 0;
+    while (idx < filteredTxns.length && filteredTxns[idx].date < dates[0]) {
+      if (filteredTxns[idx].amount > 0) cum += filteredTxns[idx].amount;
+      idx++;
+    }
+    const pts = [];
+    for (const d of dates) {
+      while (idx < filteredTxns.length && filteredTxns[idx].date <= d) {
+        if (filteredTxns[idx].amount > 0) cum += filteredTxns[idx].amount;
+        idx++;
+      }
+      pts.push({ x: d, y: cum });
+    }
+    return { data: pts, unit: granularity === 'week' ? 'month' : (WINDOW_DAYS[currentWindow] && WINDOW_DAYS[currentWindow] <= 91 ? 'week' : 'month') };
+  } else {
+    // Monthly cash flow bars (bucketing always monthly), clipped to window
+    const buckets = {};
+    filteredTxns.forEach(r => {
+      if (r.date < start || r.date > end) return;
+      const k = r.date.getFullYear() + '-' + String(r.date.getMonth() + 1).padStart(2, '0');
+      buckets[k] = (buckets[k] || 0) + r.amount;
+    });
+    const pts = Object.keys(buckets).sort().map(k => {
+      const [y, m] = k.split('-').map(Number);
+      return { x: new Date(y, m - 1, 15), y: buckets[k] };
+    });
+    return { data: pts, unit: 'month' };
+  }
+}
+
+// ---- Gradient helpers ----
+// Per-segment leak gradient is implemented as a Chart.js plugin (see leakFillPlugin
+// below). The dataset's own backgroundColor is set to transparent so only the
+// plugin-drawn fill is visible. These helper functions return transparent so the
+// default area renderer doesn't paint on top.
+function makeGradient(/* chart, stops */) { return 'rgba(0,0,0,0)'; }
+function plGradient(/* chart */) { return 'rgba(0,0,0,0)'; }
+
+// Plugin: for each line segment, fill the quad between the segment and the baseline
+// with a gradient anchored AT the segment's actual Y, fading to transparent at the
+// baseline. The result is a fill that visually leaks straight out of the line.
+// Per-x-pixel leak fill — for every column inside the chart area, interpolate the
+// line's Y at that x and draw a 1px-wide vertical gradient that's strongest exactly
+// at the line and fades to transparent `extent` pixels away. Result: the fill colour
+// genuinely glows out of the line at every point, matching the Robinhood-style look.
+const leakFillPlugin = {
+  id: 'leakFill',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales || !scales.y) return;
+
+    chart.data.datasets.forEach((dataset, dsIdx) => {
+      const cfg = dataset._leakFill;
+      if (!cfg) return;
+      const meta = chart.getDatasetMeta(dsIdx);
+      if (!meta || !meta.data || meta.data.length < 2) return;
+
+      const hasBaseline = cfg.baseline != null;
+      const baselineY = hasBaseline ? scales.y.getPixelForValue(cfg.baseline) : null;
+      const extent = cfg.extent != null ? cfg.extent : 180;
+      const peak = cfg.peak != null ? cfg.peak : 0.35;
+      const colorOf = typeof cfg.color === 'function' ? cfg.color : () => cfg.color;
+
+      const pts = [];
+      const data = dataset.data || [];
+      for (let i = 0; i < meta.data.length; i++) {
+        const p = meta.data[i];
+        if (!p || !isFinite(p.x) || !isFinite(p.y)) continue;
+        pts.push({ x: p.x, y: p.y, v: data[i] && isFinite(data[i].y) ? data[i].y : 0 });
+      }
+      if (pts.length < 2) return;
+      pts.sort((a, b) => a.x - b.x);
+
+      const xStart = Math.max(chartArea.left, Math.floor(pts[0].x));
+      const xEnd = Math.min(chartArea.right, Math.ceil(pts[pts.length - 1].x));
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(chartArea.left, chartArea.top,
+               chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+      ctx.clip();
+
+      let i = 0;
+      for (let x = xStart; x <= xEnd; x++) {
+        while (i < pts.length - 1 && pts[i + 1].x < x) i++;
+        if (i >= pts.length - 1) break;
+        const p0 = pts[i], p1 = pts[i + 1];
+        const span = p1.x - p0.x || 1;
+        const t = (x - p0.x) / span;
+        const lineY = p0.y + (p1.y - p0.y) * t;
+        const val = p0.v + (p1.v - p0.v) * t;
+        const col = colorOf(val);
+
+        let dir = 1, stopY;
+        if (hasBaseline) {
+          if (Math.abs(lineY - baselineY) < 0.5) continue;
+          dir = baselineY > lineY ? 1 : -1;
+          const target = lineY + dir * extent;
+          stopY = dir > 0 ? Math.min(target, baselineY) : Math.max(target, baselineY);
+        } else {
+          stopY = Math.min(lineY + extent, chartArea.bottom);
+        }
+        if (Math.abs(stopY - lineY) < 1) continue;
+
+        const g = ctx.createLinearGradient(0, lineY, 0, stopY);
+        g.addColorStop(0, `rgba(${col}, ${peak})`);
+        g.addColorStop(1, `rgba(${col}, 0)`);
+        ctx.fillStyle = g;
+        const top = Math.min(lineY, stopY);
+        ctx.fillRect(x, top, 1, Math.abs(stopY - lineY));
+      }
+      ctx.restore();
+    });
+  }
+};
+Chart.register(leakFillPlugin);
+
+function renderChart(rows) {
+  const { data, unit } = buildSeries(rows, currentMetric);
+  const isFlow = currentMetric === 'flow';
+  const yLabel = currentMetric === 'invested' ? 'Cumulative invested (₹)' : 'Net cash flow (₹)';
+  const ds = isFlow ? {
+    type: 'bar', label: yLabel, data,
+    backgroundColor: data.map(p => p.y >= 0 ? 'rgba(0,230,118,0.75)' : 'rgba(255,107,53,0.75)'),
+    borderColor: data.map(p => p.y >= 0 ? '#00e676' : '#ff6b35'),
+    borderWidth: 1,
+  } : {
+    type: 'line', label: yLabel, data,
+    borderColor: '#4ab3ff',
+    backgroundColor: 'rgba(0,0,0,0)', fill: false,
+    _leakFill: { color: '74, 179, 255', extent: 25, peak: 0.15 },
+    tension: 0.09, pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.5,
+  };
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('chart').getContext('2d'), {
+    data: { datasets: [ds] },
+    options: chartOpts({ unit, yFmt: v => '₹' + (v/1000).toFixed(0) + 'k', tooltipFmt: v => fmtINR(v) })
+  });
+}
+
+function renderPLChart(filteredTxns) {
+  const { data: series, granularity } = buildPLSeries(filteredTxns);
+  document.getElementById('granularity-tag').textContent =
+    series.length + ' points · ' + (granularity === 'week' ? 'weekly' : 'daily') + ' granularity';
+  const xUnit = granularity === 'week' ? 'month' : (series.length > 120 ? 'month' : 'week');
+  let datasets = [];
+  let yFmt = v => '₹' + (v/1000).toFixed(0) + 'k';
+  let tooltipFmt = v => fmtINR(v);
+  // Segment colors: bright green when y >= 0, orange when negative
+  const segColor = ctx => {
+    const p0 = ctx.p0.parsed.y, p1 = ctx.p1.parsed.y;
+    return (p0 + p1) / 2 >= 0 ? '#00e676' : '#ff6b35';
+  };
+  const plLeak = {
+    color: v => v >= 0 ? '0, 230, 118' : '255, 107, 53',
+    baseline: 0, extent: 25, peak: 0.15,
+  };
+  if (currentPLMetric === 'pl') {
+    datasets = [{
+      type: 'line', label: 'P/L (₹)',
+      data: series.map(p => ({ x: p.x, y: p.pl })),
+      borderColor: '#00e676',
+      segment: { borderColor: segColor },
+      backgroundColor: 'rgba(0,0,0,0)', fill: false,
+      _leakFill: plLeak,
+      tension: 0.09, pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.5,
+    }];
+  } else if (currentPLMetric === 'both') {
+    datasets = [
+      { type: 'line', label: 'Invested', data: series.map(p => ({ x: p.x, y: p.invested })),
+        borderColor: '#8fa0ad', backgroundColor: 'transparent', fill: false,
+        tension: 0.15, pointRadius: 0, borderWidth: 2, borderDash: [4, 4] },
+      { type: 'line', label: 'Current value', data: series.map(p => ({ x: p.x, y: p.value })),
+        borderColor: '#4ab3ff',
+        backgroundColor: 'rgba(0,0,0,0)', fill: false,
+        _leakFill: { color: '74, 179, 255', extent: 25, peak: 0.15 },
+        tension: 0.09, pointRadius: 0, borderWidth: 1.5 },
+    ];
+  } else {
+    yFmt = v => v.toFixed(0) + '%';
+    tooltipFmt = v => fmtPct(v);
+    datasets = [{
+      type: 'line', label: 'Return %',
+      data: series.map(p => ({ x: p.x, y: p.pct })),
+      borderColor: '#00e676',
+      segment: { borderColor: segColor },
+      backgroundColor: 'rgba(0,0,0,0)', fill: false,
+      _leakFill: plLeak,
+      tension: 0.09, pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.5,
+    }];
+  }
+  if (plChart) plChart.destroy();
+  plChart = new Chart(document.getElementById('pl-chart').getContext('2d'), {
+    data: { datasets },
+    options: chartOpts({ unit: xUnit, yFmt, tooltipFmt })
+  });
+}
+
+function renderAllocChart(filteredTxns) {
+  const holdings = holdingsToRows(computeHoldings(filteredTxns));
+  const byAmc = {};
+  for (const h of holdings) {
+    const v = h.current_value || h.current_invested;
+    if (v > 0) byAmc[h.amc] = (byAmc[h.amc] || 0) + v;
+  }
+  const entries = Object.entries(byAmc).sort((a,b) => b[1] - a[1]);
+  const palette = ['#4ab3ff','#00e676','#ffb547','#ff6b35','#56d4dd','#db61a2','#a371f7','#f0883e','#7ce38b','#ffa657','#79c0ff','#e3b341','#ff7b72','#8957e5'];
+  if (allocChart) allocChart.destroy();
+  allocChart = new Chart(document.getElementById('alloc-chart').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: entries.map(e => e[0]),
+      datasets: [{
+        data: entries.map(e => e[1]),
+        backgroundColor: entries.map((_, i) => palette[i % palette.length]),
+        borderColor: 'rgb(35, 49, 57)', borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#e8eef2', font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const total = c.dataset.data.reduce((a,b) => a + b, 0);
+              const pct = ((c.parsed / total) * 100).toFixed(1);
+              return c.label + ': ' + fmtINRShort(c.parsed) + ' (' + pct + '%)';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function chartOpts({ unit, yFmt, tooltipFmt }) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { labels: { color: '#e8eef2', font: { size: 11 }, boxWidth: 14 } },
+      tooltip: {
+        backgroundColor: 'rgb(28, 40, 47)', borderColor: 'rgb(54, 72, 82)', borderWidth: 1,
+        titleColor: '#e8eef2', bodyColor: '#e8eef2',
+        callbacks: { label: c => c.dataset.label + ': ' + tooltipFmt(c.parsed.y) }
+      }
+    },
+    scales: {
+      x: { type: 'time', time: { unit, tooltipFormat: 'dd MMM yyyy' }, ticks: { color: '#8fa0ad' }, grid: { color: 'rgba(143,160,173,0.06)' } },
+      y: { ticks: { color: '#8fa0ad', callback: yFmt }, grid: { color: 'rgba(143,160,173,0.08)' } }
+    }
+  };
+}
+
+// ---- Insights ----
+// XIRR using Newton-Raphson over cash flows
+function xirr(cashflows) {
+  // cashflows: [{amount, date}] — purchases negative, redemptions+current value positive
+  if (cashflows.length < 2) return null;
+  const days = cashflows.map(c => (c.date - cashflows[0].date) / (1000 * 86400));
+  function npv(r) { return cashflows.reduce((s, c, i) => s + c.amount / Math.pow(1 + r, days[i] / 365), 0); }
+  function dnpv(r) { return cashflows.reduce((s, c, i) => s - (days[i] / 365) * c.amount / Math.pow(1 + r, days[i] / 365 + 1), 0); }
+  let r = 0.1;
+  for (let i = 0; i < 80; i++) {
+    const v = npv(r), d = dnpv(r);
+    if (Math.abs(v) < 1e-4) return r;
+    if (!isFinite(d) || Math.abs(d) < 1e-12) break;
+    const nr = r - v / d;
+    if (!isFinite(nr) || nr <= -0.999) break;
+    if (Math.abs(nr - r) < 1e-7) return nr;
+    r = nr;
+  }
+  return null;
+}
+
+function renderInsights(filteredTxns) {
+  const holdings = holdingsToRows(computeHoldings(filteredTxns));
+  const el = document.getElementById('insights');
+  const blocks = [];
+
+  // Top gainers / losers by absolute P/L
+  const ranked = holdings.filter(h => h.pl != null).slice().sort((a, b) => b.pl - a.pl);
+  const winners = ranked.slice(0, 5);
+  const losers = ranked.slice(-5).reverse();
+  blocks.push(insightBlock('Top gainers',
+    winners.map(h => row(h.fund_name, fmtINR(h.pl) + ' (' + fmtPct(h.pl_pct) + ')', h.pl >= 0 ? 'green' : 'red'))));
+  blocks.push(insightBlock('Underperformers',
+    losers.map(h => row(h.fund_name, fmtINR(h.pl) + ' (' + fmtPct(h.pl_pct) + ')', h.pl >= 0 ? 'green' : 'red'))));
+
+  // XIRR
+  const cashflows = filteredTxns.map(t => ({ amount: -t.amount, date: t.date }));
+  const currentValue = holdings.reduce((s, h) => s + (h.current_value || 0), 0);
+  if (currentValue > 0) cashflows.push({ amount: currentValue, date: new Date() });
+  const r = xirr(cashflows);
+  blocks.push(insightBlock('Annualized return (XIRR)', [
+    row('Across selected holdings', r != null ? fmtPct(r * 100) : '—', r != null && r >= 0 ? 'green' : 'red')
+  ]));
+
+  // Concentration — top holdings as % of portfolio value
+  const totalValue = holdings.reduce((s, h) => s + (h.current_value || 0), 0);
+  const top = holdings.filter(h => h.current_value).slice().sort((a,b) => b.current_value - a.current_value).slice(0, 5);
+  if (top.length) {
+    const topItems = top.map(h => ({
+      name: h.fund_name,
+      value: h.current_value,
+      label: fmtINRShort(h.current_value) + ' · ' + (totalValue > 0 ? ((h.current_value/totalValue)*100).toFixed(1) + '%' : '—'),
+    }));
+    blocks.push(chartableInsightBlock('top', 'Top holdings (by value)', topItems));
+  }
+
+  // SIP vs lumpsum breakdown
+  let sip = 0, lump = 0;
+  for (const t of filteredTxns) {
+    if (t.amount <= 0) continue;
+    if ((t.transaction_type || '').toLowerCase().includes('sip') || t.transaction_type === 'SIP Purchase') sip += t.amount;
+    else lump += t.amount;
+  }
+  const tot = sip + lump;
+  if (tot > 0) {
+    blocks.push(chartableInsightBlock('style', 'Investment style', [
+      { name: 'SIP', value: sip, label: fmtINR(sip) + ' (' + ((sip/tot)*100).toFixed(1) + '%)' },
+      { name: 'Lumpsum / other', value: lump, label: fmtINR(lump) + ' (' + ((lump/tot)*100).toFixed(1) + '%)' },
+    ]));
+  }
+
+  // Category allocation from fund metadata (when available) — chartable insights
+  const byCategory = {}, byFundType = {}, byRisk = {};
+  let totalAllocated = 0;
+  for (const h of holdings) {
+    const v = h.current_value || h.current_invested;
+    if (v <= 0) continue;
+    const fund = FUNDS[h.isin];
+    const cat = (fund && (fund.fund_category || fund.category)) || 'Unknown';
+    const typ = (fund && fund.fund_type) || (fund && fund.category) || 'Unknown';
+    const risk = (fund && fund.crisil_rating) || 'Unrated';
+    byCategory[cat] = (byCategory[cat] || 0) + v;
+    byFundType[typ] = (byFundType[typ] || 0) + v;
+    byRisk[risk] = (byRisk[risk] || 0) + v;
+    totalAllocated += v;
+  }
+  const toItems = (obj, limit) => {
+    const entries = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+    const top = limit ? entries.slice(0, limit) : entries;
+    return top.map(([name, value]) => ({
+      name, value,
+      label: fmtINRShort(value) + ' · ' + (totalAllocated > 0 ? ((value/totalAllocated)*100).toFixed(1) + '%' : '—'),
+    }));
+  };
+  const catItems = toItems(byCategory, 8);
+  if (catItems.length) blocks.push(chartableInsightBlock('cat', 'Allocation by category', catItems));
+  const typItems = toItems(byFundType);
+  if (typItems.length) blocks.push(chartableInsightBlock('typ', 'Equity vs Debt', typItems));
+  const riskItems = toItems(byRisk);
+  if (riskItems.length) blocks.push(chartableInsightBlock('risk', 'Risk exposure', riskItems));
+
+  // Activity stats
+  const dates = filteredTxns.map(t => t.date).sort((a,b)=>a-b);
+  const span = dates.length ? Math.round((new Date() - dates[0]) / (1000*86400*30.5)) : 0;
+  const folios = new Set(filteredTxns.map(t => t.folio)).size;
+  blocks.push(insightBlock('Portfolio facts', [
+    row('Active folios', folios.toString()),
+    row('Active funds', holdings.length.toString()),
+    row('First investment', dates.length ? dates[0].toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—'),
+    row('Investing for', span + ' months'),
+  ]));
+
+  el.innerHTML = blocks.join('');
+  instantiatePies();
+}
+
+function row(name, value, cls) {
+  return `<div class="row"><span class="name" title="${name}">${name}</span><span class="v ${cls||''}">${value}</span></div>`;
+}
+function insightBlock(title, rows) {
+  return `<div class="insight"><div class="title">${title}</div>${rows.join('')}</div>`;
+}
+
+const INSIGHT_VIEW = {         // blockId → 'table' | 'pie'
+  cat: 'pie', typ: 'pie', risk: 'pie', style: 'pie',
+};
+const INSIGHT_DATA = {};       // blockId → [{name, value:number, label:string}]
+const INSIGHT_CHARTS = {};     // blockId → Chart.js instance
+
+const PIE_PALETTE = ['#4ab3ff','#00e676','#ffb547','#ff6b35','#56d4dd','#db61a2','#a371f7','#f0883e','#7ce38b','#ffa657','#79c0ff','#e3b341','#ff7b72','#8957e5'];
+
+function chartableInsightBlock(id, title, items) {
+  INSIGHT_DATA[id] = items;
+  const view = INSIGHT_VIEW[id] || 'table';
+  const toggle = `<div class="ins-toggle">
+    <button class="${view==='table'?'active':''}" data-block="${id}" data-view="table" title="List view">List</button>
+    <button class="${view==='pie'?'active':''}" data-block="${id}" data-view="pie" title="Pie view">Pie</button>
+  </div>`;
+  const head = `<div class="insight-head"><div class="title">${title}</div>${toggle}</div>`;
+  const body = view === 'pie'
+    ? `<div class="pie-wrap"><canvas></canvas></div>`
+    : items.map(i => row(i.name, i.label)).join('');
+  return `<div class="insight chartable" data-block="${id}">${head}${body}</div>`;
+}
+
+function instantiatePies() {
+  for (const id of Object.keys(INSIGHT_VIEW)) {
+    if (INSIGHT_VIEW[id] !== 'pie') continue;
+    const block = document.querySelector(`.insight[data-block="${id}"]`);
+    if (!block) continue;
+    const canvas = block.querySelector('canvas');
+    if (!canvas) continue;
+    const items = INSIGHT_DATA[id] || [];
+    if (INSIGHT_CHARTS[id]) INSIGHT_CHARTS[id].destroy();
+    INSIGHT_CHARTS[id] = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: items.map(i => i.name),
+        datasets: [{
+          data: items.map(i => i.value),
+          backgroundColor: items.map((_, i) => PIE_PALETTE[i % PIE_PALETTE.length]),
+          borderColor: 'rgb(28, 40, 47)', borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '55%',
+        plugins: {
+          legend: { position: 'right', labels: { color: '#e8eef2', font: { size: 10.5 }, boxWidth: 10, padding: 6 } },
+          tooltip: {
+            backgroundColor: 'rgb(28, 40, 47)', borderColor: 'rgb(54, 72, 82)', borderWidth: 1,
+            titleColor: '#e8eef2', bodyColor: '#e8eef2',
+            callbacks: {
+              label: c => {
+                const total = c.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total ? ((c.parsed / total) * 100).toFixed(1) : '0';
+                const item = items[c.dataIndex];
+                return c.label + ': ' + (item ? item.label : c.parsed) + ' (' + pct + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+function renderHoldingsTable(filteredTxns) {
+  const holdings = holdingsToRows(computeHoldings(filteredTxns));
+  const tbody = document.querySelector('#holdings-table tbody');
+  if (holdings.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No active holdings match the filters.</td></tr>';
+    return;
+  }
+  const c = holdingsSort.col, d = holdingsSort.dir;
+  holdings.sort((a,b) => {
+    const av = a[c], bv = b[c];
+    if (av == null) return 1; if (bv == null) return -1;
+    return typeof av === 'string' ? av.localeCompare(bv) * d : (av - bv) * d;
+  });
+  tbody.innerHTML = holdings.map(h => `
+    <tr>
+      <td>${h.amc || '—'}</td>
+      <td title="${h.fund_name}"><span class="fund-link" data-isin="${h.isin}">${(h.fund_name || '').slice(0, 50)}${(h.fund_name || '').length > 50 ? '…' : ''}</span></td>
+      <td>${h.folio}</td>
+      <td class="num">${fmtNum(h.current_units)}</td>
+      <td class="num">${h.nav != null ? fmtNum(h.nav, 4) : '—'}</td>
+      <td>${h.nav_date ? h.nav_date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+      <td class="num">${fmtINR(h.current_invested)}</td>
+      <td class="num">${h.current_value != null ? fmtINR(h.current_value) : '—'}</td>
+      <td class="num ${h.pl != null ? (h.pl >= 0 ? 'green' : 'red') : ''}">${h.pl != null ? fmtINR(h.pl) : '—'}</td>
+      <td class="num ${h.pl_pct != null ? (h.pl_pct >= 0 ? 'green' : 'red') : ''}">${h.pl_pct != null ? fmtPct(h.pl_pct) : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// ---- Fund details side panel ----
+function openFundPanel(isin) {
+  const fund = FUNDS[isin];
+  const nav = NAVS[isin];
+  const sp = document.getElementById('side-panel');
+  const backdrop = document.getElementById('side-backdrop');
+  document.getElementById('sp-title').textContent =
+    (fund && (fund.name || fund.short_name)) || (nav && nav.name) || isin;
+  document.getElementById('sp-meta').textContent =
+    [fund && fund.fund_name, fund && fund.fund_category, isin].filter(Boolean).join(' · ');
+
+  // Find this fund's holdings across folios to show user-specific position
+  const holdings = holdingsToRows(computeHoldings(applyFilters(TXNS, getFilters())))
+    .filter(h => h.isin === isin);
+  const totalUnits = holdings.reduce((s, h) => s + (h.current_units || 0), 0);
+  const totalInvested = holdings.reduce((s, h) => s + (h.current_invested || 0), 0);
+  const totalValue = holdings.reduce((s, h) => s + (h.current_value || 0), 0);
+  const pl = totalValue - totalInvested;
+  const plPct = totalInvested > 0 ? (pl / totalInvested) * 100 : 0;
+
+  const body = document.getElementById('sp-body');
+  const sections = [];
+
+  // Your position
+  if (totalUnits > 0) {
+    sections.push(`
+      <div class="sp-section">
+        <h4>Your position (filtered)</h4>
+        <div class="sp-grid">
+          <div><div class="lbl">Folios</div><div class="val">${holdings.length}</div></div>
+          <div><div class="lbl">Units</div><div class="val">${fmtNum(totalUnits)}</div></div>
+          <div><div class="lbl">Invested</div><div class="val">${fmtINR(totalInvested)}</div></div>
+          <div><div class="lbl">Current value</div><div class="val">${fmtINR(totalValue)}</div></div>
+          <div><div class="lbl">P/L</div><div class="val ${pl >= 0 ? 'green' : 'red'}">${fmtINR(pl)}</div></div>
+          <div><div class="lbl">Return</div><div class="val ${pl >= 0 ? 'green' : 'red'}">${fmtPct(plPct)}</div></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (fund) {
+    // Returns
+    if (fund.returns) {
+      const r = fund.returns;
+      sections.push(`
+        <div class="sp-section">
+          <h4>Trailing returns (${r.date || ''})</h4>
+          <div class="sp-returns">
+            <div class="r"><div class="l">1Y</div><div class="v ${(r.year_1||0) >= 0 ? 'green' : 'red'}">${fmtPct(r.year_1 || 0)}</div></div>
+            <div class="r"><div class="l">3Y</div><div class="v ${(r.year_3||0) >= 0 ? 'green' : 'red'}">${fmtPct(r.year_3 || 0)}</div></div>
+            <div class="r"><div class="l">5Y</div><div class="v ${(r.year_5||0) >= 0 ? 'green' : 'red'}">${fmtPct(r.year_5 || 0)}</div></div>
+            <div class="r"><div class="l">Incept.</div><div class="v ${(r.inception||0) >= 0 ? 'green' : 'red'}">${fmtPct(r.inception || 0)}</div></div>
+          </div>
+        </div>
+      `);
+    }
+
+    // Key facts
+    const facts = [
+      ['Category', fund.fund_category || fund.category],
+      ['Plan', `${fund.plan || ''}${fund.direct === 'Y' ? ' · Direct' : ''}`],
+      ['Risk', fund.crisil_rating],
+      ['Rating', fund.fund_rating ? '★'.repeat(fund.fund_rating) + '☆'.repeat(5 - fund.fund_rating) : null],
+      ['Expense ratio', fund.expense_ratio ? fund.expense_ratio + '%' : null],
+      ['AUM', fund.aum ? '₹' + fund.aum.toLocaleString('en-IN') + ' Cr' : null],
+      ['Inception', fund.start_date],
+      ['Volatility', fund.volatility != null ? fund.volatility.toFixed(2) + '%' : null],
+      ['Maturity', fund.maturity_type],
+      ['Lock-in', fund.lock_in_period ? fund.lock_in_period + ' days' : 'None'],
+    ].filter(([_, v]) => v);
+    sections.push(`
+      <div class="sp-section">
+        <h4>Fund facts</h4>
+        <div class="sp-grid">
+          ${facts.map(([k, v]) => `<div><div class="lbl">${k}</div><div class="val">${v}</div></div>`).join('')}
+        </div>
+      </div>
+    `);
+
+    // NAV
+    if (fund.nav || nav) {
+      const curNav = (fund.nav && fund.nav.nav) || (nav && nav.nav);
+      const navDate = (fund.nav && fund.nav.date) || (nav && nav.date);
+      sections.push(`
+        <div class="sp-section">
+          <h4>Latest NAV</h4>
+          <div class="sp-grid">
+            <div><div class="lbl">NAV</div><div class="val">₹${fmtNum(curNav || 0, 4)}</div></div>
+            <div><div class="lbl">As of</div><div class="val">${navDate || '—'}</div></div>
+          </div>
+        </div>
+      `);
+    }
+
+    // Manager
+    if (fund.fund_manager) {
+      sections.push(`
+        <div class="sp-section">
+          <h4>Fund manager</h4>
+          <div class="sp-text">${fund.fund_manager.split(';').map(n => `<span class="sp-pill">${n.trim()}</span>`).join('')}</div>
+        </div>
+      `);
+    }
+
+    // Objective
+    if (fund.investment_objective) {
+      sections.push(`
+        <div class="sp-section">
+          <h4>Investment objective</h4>
+          <div class="sp-text">${fund.investment_objective}</div>
+        </div>
+      `);
+    }
+  } else {
+    sections.push(`
+      <div class="sp-section">
+        <h4>Fund metadata not available</h4>
+        <div class="sp-text">Run <code>python3 fetch_funds.py</code> to populate <code>funds/${isin}.json</code> with details from the Kuvera API.</div>
+      </div>
+    `);
+  }
+
+  sections.push(`
+    <div class="sp-section" style="text-align: center;">
+      <a class="sp-cta" href="fund.html?isin=${encodeURIComponent(isin)}" target="_blank">Open full details →</a>
+    </div>
+  `);
+
+  body.innerHTML = sections.join('');
+  backdrop.classList.add('open');
+  sp.classList.add('open');
+}
+
+function closeFundPanel() {
+  document.getElementById('side-panel').classList.remove('open');
+  document.getElementById('side-backdrop').classList.remove('open');
+}
+
+function aggregateByFund(holdings) {
+  // Group holdings (per folio) by ISIN — fund-level rollup.
+  const byIsin = {};
+  for (const h of holdings) {
+    const k = h.isin;
+    if (!byIsin[k]) {
+      byIsin[k] = {
+        isin: k, fund_name: h.fund_name, amc: h.amc,
+        nav: h.nav, nav_date: h.nav_date,
+        folios: new Set(),
+        current_units: 0, current_invested: 0, current_value: 0,
+      };
+    }
+    const f = byIsin[k];
+    f.folios.add(h.folio);
+    f.current_units += h.current_units || 0;
+    f.current_invested += h.current_invested || 0;
+    if (h.current_value != null) f.current_value += h.current_value;
+  }
+  return Object.values(byIsin).map(f => ({
+    ...f,
+    folios: f.folios.size,
+    pl: f.nav != null ? f.current_value - f.current_invested : null,
+    pl_pct: f.current_invested > 0 && f.nav != null
+      ? ((f.current_value - f.current_invested) / f.current_invested) * 100
+      : null,
+  }));
+}
+
+function renderFundsTable(filteredTxns) {
+  const holdings = holdingsToRows(computeHoldings(filteredTxns));
+  const funds = aggregateByFund(holdings);
+
+  // Group filtered transactions by ISIN for per-fund XIRR
+  const txnsByIsin = {};
+  for (const t of filteredTxns) {
+    if (!txnsByIsin[t.isin]) txnsByIsin[t.isin] = [];
+    txnsByIsin[t.isin].push(t);
+  }
+  const today = new Date();
+  for (const f of funds) {
+    const cfs = (txnsByIsin[f.isin] || []).map(t => ({ amount: -t.amount, date: t.date }));
+    if (f.nav != null && f.current_value > 0) cfs.push({ amount: f.current_value, date: today });
+    const r = xirr(cfs);
+    f.xirr = r != null && isFinite(r) ? r * 100 : null;
+  }
+
+  const tbody = document.querySelector('#funds-table tbody');
+  if (funds.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No active holdings match the filters.</td></tr>';
+    return;
+  }
+  const c = fundsSort.col, d = fundsSort.dir;
+  funds.sort((a, b) => {
+    const av = a[c], bv = b[c];
+    if (av == null) return 1; if (bv == null) return -1;
+    return typeof av === 'string' ? av.localeCompare(bv) * d : (av - bv) * d;
+  });
+  tbody.innerHTML = funds.map(f => `
+    <tr>
+      <td>${f.amc || '—'}</td>
+      <td title="${f.fund_name}"><span class="fund-link" data-isin="${f.isin}">${(f.fund_name || '').slice(0, 60)}${(f.fund_name || '').length > 60 ? '…' : ''}</span></td>
+      <td class="num">${f.folios}</td>
+      <td class="num">${fmtNum(f.current_units)}</td>
+      <td class="num">${f.nav != null ? fmtNum(f.nav, 4) : '—'}</td>
+      <td>${f.nav_date ? f.nav_date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+      <td class="num">${fmtINR(f.current_invested)}</td>
+      <td class="num">${f.nav != null ? fmtINR(f.current_value) : '—'}</td>
+      <td class="num ${f.pl != null ? (f.pl >= 0 ? 'green' : 'red') : ''}">${f.pl != null ? fmtINR(f.pl) : '—'}</td>
+      <td class="num ${f.pl_pct != null ? (f.pl_pct >= 0 ? 'green' : 'red') : ''}">${f.pl_pct != null ? fmtPct(f.pl_pct) : '—'}</td>
+      <td class="num ${f.xirr != null ? (f.xirr >= 0 ? 'green' : 'red') : ''}">${f.xirr != null ? fmtPct(f.xirr) : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function typeBadge(t) {
+  const tl = (t || '').toLowerCase();
+  let cls = '';
+  if (tl.includes('redemption') || tl.includes('reversal')) cls = 'redemption';
+  else if (tl.includes('switch')) cls = 'switch';
+  else if (tl.includes('purchase')) cls = 'purchase';
+  return `<span class="badge ${cls}">${t}</span>`;
+}
+
+function renderTxnsTable(rows) {
+  const body = document.querySelector('#tx-table tbody');
+  if (rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">No transactions match the filters.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.slice().reverse().map(r => `
+    <tr>
+      <td>${r.date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+      <td>${r.amc || '—'}</td>
+      <td title="${r.fund_name}">${(r.fund_name || '').slice(0, 50)}${(r.fund_name || '').length > 50 ? '…' : ''}</td>
+      <td>${r.folio}</td>
+      <td>${typeBadge(r.transaction_type)}</td>
+      <td class="num ${r.amount >= 0 ? 'green' : 'red'}">${fmtINR(r.amount)}</td>
+      <td class="num ${r.units >= 0 ? '' : 'red'}">${fmtNum(r.units)}</td>
+      <td class="num">${fmtNum(r.price, 4)}</td>
+    </tr>
+  `).join('');
+}
+
+function update() {
+  refillDependentFilters();
+  const rows = applyFilters(TXNS, getFilters());
+  document.getElementById('match-info').textContent = rows.length + ' of ' + TXNS.length + ' transactions match';
+  renderCards(rows);
+  renderChart(rows);
+  renderPLChart(rows);
+  renderAllocChart(rows);
+  renderInsights(rows);
+  renderFundsTable(rows);
+  renderHoldingsTable(rows);
+  renderTxnsTable(rows);
+}
+
+function init() {
+  document.getElementById('status').style.display = 'none';
+  document.getElementById('app').style.display = '';
+
+  ['amc', 'fund_name', 'folio', 'advisor'].forEach(setupMS);
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.ms.open').forEach(m => m.classList.remove('open'));
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.values(MS_STATE).forEach(s => s.clear());
+    ['amc', 'fund_name', 'folio', 'advisor'].forEach(updateMSButton);
+    update();
+  });
+  document.querySelectorAll('#metric-toggle button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#metric-toggle button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      currentMetric = b.dataset.metric;
+      const rows = applyFilters(TXNS, getFilters());
+      renderChart(rows);
+    });
+  });
+  document.querySelectorAll('#pl-metric-toggle button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#pl-metric-toggle button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      currentPLMetric = b.dataset.metric;
+      renderPLChart(applyFilters(TXNS, getFilters()));
+    });
+  });
+  document.querySelectorAll('.window-toggle button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.window-toggle button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      currentWindow = b.dataset.win;
+      const rows = applyFilters(TXNS, getFilters());
+      renderPLChart(rows);
+      renderChart(rows);
+    });
+  });
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    });
+  });
+  document.querySelectorAll('#holdings-table th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      holdingsSort = { col, dir: holdingsSort.col === col ? -holdingsSort.dir : -1 };
+      renderHoldingsTable(applyFilters(TXNS, getFilters()));
+    });
+  });
+  document.querySelectorAll('#funds-table th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      fundsSort = { col, dir: fundsSort.col === col ? -fundsSort.dir : -1 };
+      renderFundsTable(applyFilters(TXNS, getFilters()));
+    });
+  });
+
+  // Fund link click delegation (event delegation on document — works for re-rendered rows)
+  document.addEventListener('click', e => {
+    const link = e.target.closest('.fund-link');
+    if (link && link.dataset.isin) {
+      e.stopPropagation();
+      openFundPanel(link.dataset.isin);
+      return;
+    }
+    const insBtn = e.target.closest('.ins-toggle button');
+    if (insBtn && insBtn.dataset.block) {
+      e.stopPropagation();
+      INSIGHT_VIEW[insBtn.dataset.block] = insBtn.dataset.view;
+      const rows = applyFilters(TXNS, getFilters());
+      renderInsights(rows);
+    }
+  });
+  document.getElementById('sp-close').addEventListener('click', closeFundPanel);
+  document.getElementById('side-backdrop').addEventListener('click', closeFundPanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeFundPanel();
+  });
+  update();
+}
+
+load();
+</script>
+</body>
+</html>

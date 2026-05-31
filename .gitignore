@@ -1,0 +1,6 @@
+.DS_Store
+transaction_summary.csv
+transactions.csv
+*.pdf
+nav/*
+funds/*
